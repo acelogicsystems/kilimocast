@@ -12,7 +12,10 @@ import {
   RefreshCw,
   Sprout,
   ShieldAlert,
-  Volume2
+  Volume2,
+  Share2,
+  CalendarDays,
+  Send
 } from "lucide-react";
 
 const LOCATIONS = [
@@ -42,6 +45,7 @@ export default function App() {
   const [weatherData, setWeatherData] = useState(null);
   const [showUssdModal, setShowUssdModal] = useState(false);
   const [ussdStep, setUssdStep] = useState(1);
+  const [copiedAlert, setCopiedAlert] = useState(false);
 
   const fetchWeather = async (lat, lon) => {
     setLoading(true);
@@ -61,12 +65,20 @@ export default function App() {
     fetchWeather(selectedLoc.lat, selectedLoc.lon);
   }, [selectedLoc]);
 
+  // Derived current metrics
   const rain24h = weatherData?.daily?.precipitation_sum?.[0] ?? 0;
   const rainProb = weatherData?.daily?.precipitation_probability_max?.[0] ?? 0;
   const windSpeed = weatherData?.daily?.wind_speed_10m_max?.[0] ?? 0;
   const maxTemp = weatherData?.daily?.temperature_2m_max?.[0] ?? 24;
   const humidity = weatherData?.current?.relative_humidity_2m ?? 65;
 
+  // 7-day daily forecast parsing
+  const dailyDates = weatherData?.daily?.time || [];
+  const dailyRains = weatherData?.daily?.precipitation_sum || [];
+  const dailyWinds = weatherData?.daily?.wind_speed_10m_max || [];
+  const dailyTemps = weatherData?.daily?.temperature_2m_max || [];
+
+  // Rules Evaluation
   const evaluateDecisions = () => {
     let spray = {
       status: "SAFE",
@@ -81,7 +93,7 @@ export default function App() {
         color: "border-red-500 bg-red-950/40 text-red-400",
         icon: XCircle,
         msgEn: `High wash-off/drift risk (${rain24h}mm rain, ${windSpeed}km/h wind). Do not spray today.`,
-        msgSw: `Hatari ya dawa kuoshwa au kupeperushwa na upepo (${rain24h}mm mvua, ${windSpeed}km/h upepo). Usipulize leo.`
+        msgSw: `Hatari ya dawa kuoshwa au kupeperushwa (${rain24h}mm mvua, ${windSpeed}km/h upepo). Usipulize leo.`
       };
     }
 
@@ -132,6 +144,7 @@ export default function App() {
 
   const decisions = evaluateDecisions();
 
+  // Voice Guidance
   const handleSpeak = (text) => {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -141,8 +154,22 @@ export default function App() {
     }
   };
 
+  // WhatsApp Alert Forwarder
+  const shareWhatsAppAlert = () => {
+    const cropObj = CROPS.find((c) => c.id === selectedCrop);
+    const cropName = lang === "sw" ? cropObj?.nameSw : cropObj?.nameEn;
+    const text = lang === "sw"
+      ? `🌱 *TAARIFA YA KILIMOCAST* (${selectedLoc.name})\nZao: *${cropName}*\n\n🌦️ Hali: Mvua ${rain24h}mm, Upepo ${windSpeed}km/h\n🚫 Upuliziaji Dawa: ${decisions.spray.status === "SAFE" ? "RUHUSA KUPULIZA ✅" : "USIPULIZE LEO 🛑"}\n💧 Mbolea: ${decisions.fert.status === "OPTIMAL" ? "WEKA MBOLEA ✅" : "SUBIRI UNYEVU ⚠️"}\n\nPata ushauri bila bando piga *384*25#`
+      : `🌱 *KILIMOCAST FARM ADVISORY* (${selectedLoc.name})\nCrop: *${cropName}*\n\n🌦️ Weather: Rain ${rain24h}mm, Wind ${windSpeed}km/h\n🚫 Pesticide Spraying: ${decisions.spray.status === "SAFE" ? "SAFE TO SPRAY ✅" : "DO NOT SPRAY 🛑"}\n💧 Fertilizer Top-Dress: ${decisions.fert.status === "OPTIMAL" ? "OPTIMAL WINDOW ✅" : "POSTPONE / TOO DRY ⚠️"}\n\nUSSD Fallback: dial *384*25#`;
+
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+    setCopiedAlert(true);
+    setTimeout(() => setCopiedAlert(false), 3000);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-4 md:p-8">
+      {/* Top Bar */}
       <header className="w-full max-w-4xl flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
         <div className="flex items-center space-x-3">
           <div className="bg-emerald-600 p-2.5 rounded-xl shadow-lg shadow-emerald-900/30">
@@ -175,7 +202,9 @@ export default function App() {
         </div>
       </header>
 
+      {/* Main Container */}
       <main className="w-full max-w-4xl space-y-6">
+        {/* County & Crop Filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-900/80 border border-slate-800 p-4 rounded-2xl shadow-xl">
           <div>
             <label className="text-xs font-semibold text-slate-400 mb-1.5 block">
@@ -215,6 +244,7 @@ export default function App() {
           </div>
         </div>
 
+        {/* Live Weather Metrics Card */}
         <div className="bg-gradient-to-r from-emerald-950/50 via-slate-900 to-slate-900 border border-emerald-500/20 rounded-2xl p-5 shadow-lg">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -248,7 +278,9 @@ export default function App() {
           </div>
         </div>
 
+        {/* Action Decision Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {/* Card 1: Spraying */}
           <div className={`p-5 rounded-2xl border-2 transition-all shadow-lg flex flex-col justify-between ${decisions.spray.color}`}>
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -273,6 +305,7 @@ export default function App() {
             </button>
           </div>
 
+          {/* Card 2: Fertilizer */}
           <div className={`p-5 rounded-2xl border-2 transition-all shadow-lg flex flex-col justify-between ${decisions.fert.color}`}>
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -297,6 +330,7 @@ export default function App() {
             </button>
           </div>
 
+          {/* Card 3: Disease Risk */}
           <div className={`p-5 rounded-2xl border-2 transition-all shadow-lg flex flex-col justify-between ${decisions.blight.color}`}>
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -322,6 +356,71 @@ export default function App() {
           </div>
         </div>
 
+        {/* 7-Day Planning Outlook Ribbon */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarDays className="w-5 h-5 text-emerald-400" />
+            <h3 className="font-bold text-sm text-slate-200">
+              {lang === "sw" ? "Mtazamo wa Siku 7 wa Upuliziaji Dawa" : "7-Day Spraying & Planting Outlook"}
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
+            {dailyDates.slice(0, 7).map((date, idx) => {
+              const rain = dailyRains[idx] ?? 0;
+              const wind = dailyWinds[idx] ?? 0;
+              const temp = dailyTemps[idx] ?? 24;
+              const dayName = new Date(date).toLocaleDateString(lang === "sw" ? "sw-KE" : "en-US", { weekday: "short" });
+              const isSafe = rain <= 5 && wind <= 18;
+
+              return (
+                <div
+                  key={date}
+                  className={`p-3 rounded-xl border text-center flex flex-col justify-between ${
+                    isSafe
+                      ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
+                      : "bg-red-950/20 border-red-500/30 text-red-300"
+                  }`}
+                >
+                  <span className="text-xs font-bold uppercase">{dayName}</span>
+                  <div className="my-2">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full ${isSafe ? "bg-emerald-400 shadow-emerald-400/50" : "bg-red-400 shadow-red-400/50"} shadow-sm`}></span>
+                  </div>
+                  <div className="text-[10px] space-y-0.5 opacity-80">
+                    <div>{rain}mm</div>
+                    <div>{Math.round(temp)}°C</div>
+                  </div>
+                  <span className="text-[9px] font-semibold mt-1">
+                    {isSafe ? (lang === "sw" ? "Salama" : "Safe") : (lang === "sw" ? "Mvua/Upepo" : "Avoid")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Community Extension & WhatsApp Dispatcher */}
+        <div className="bg-gradient-to-r from-slate-900 to-emerald-950/40 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h4 className="font-bold text-sm text-white flex items-center gap-2">
+              <Share2 className="w-4 h-4 text-emerald-400" />
+              {lang === "sw" ? "Sambaza Taarifa kwa Kikundi cha Wakulima" : "Broadcast Advisory to Farmer Groups"}
+            </h4>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {lang === "sw"
+                ? "Tuma ushauri huu moja kwa moja kwenye WhatsApp au SMS ya chama cha wakulima."
+                : "Instantly dispatch formatted advisory to local cooperatives or extension officer groups."}
+            </p>
+          </div>
+          <button
+            onClick={shareWhatsAppAlert}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-900/40 transition"
+          >
+            <Send className="w-4 h-4" />
+            <span>{copiedAlert ? (lang === "sw" ? "Imefunguliwa WhatsApp!" : "Opened WhatsApp!") : (lang === "sw" ? "Tuma WhatsApp" : "Share to WhatsApp")}</span>
+          </button>
+        </div>
+
+        {/* Pitch Simulation Toggles */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
           <span className="text-slate-400 font-semibold">
             {lang === "sw" ? "Jaribu Hali Mbalimbali kwa Pitch:" : "Simulate Demo Scenarios for Pitch:"}
@@ -330,7 +429,13 @@ export default function App() {
             <button
               onClick={() => {
                 setWeatherData({
-                  daily: { precipitation_sum: [0], precipitation_probability_max: [10], wind_speed_10m_max: [8], temperature_2m_max: [25] },
+                  daily: {
+                    time: dailyDates,
+                    precipitation_sum: [0, 0, 1, 0, 15, 0, 2],
+                    precipitation_probability_max: [10],
+                    wind_speed_10m_max: [8, 10, 12, 9, 22, 11, 8],
+                    temperature_2m_max: [25, 26, 25, 24, 21, 23, 25]
+                  },
                   current: { relative_humidity_2m: 55 }
                 });
               }}
@@ -341,7 +446,13 @@ export default function App() {
             <button
               onClick={() => {
                 setWeatherData({
-                  daily: { precipitation_sum: [32], precipitation_probability_max: [90], wind_speed_10m_max: [26], temperature_2m_max: [21] },
+                  daily: {
+                    time: dailyDates,
+                    precipitation_sum: [32, 28, 19, 4, 0, 0, 1],
+                    precipitation_probability_max: [90],
+                    wind_speed_10m_max: [26, 22, 18, 10, 8, 9, 7],
+                    temperature_2m_max: [21, 20, 22, 24, 25, 26, 25]
+                  },
                   current: { relative_humidity_2m: 89 }
                 });
               }}
@@ -353,6 +464,7 @@ export default function App() {
         </div>
       </main>
 
+      {/* USSD Modal */}
       {showUssdModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="w-full max-w-sm bg-slate-900 border-2 border-slate-700 rounded-3xl p-5 shadow-2xl relative">
@@ -372,7 +484,7 @@ export default function App() {
                   <p className="font-bold">KilimoCast Huduma ya Wakulima:</p>
                   <p>1. {selectedLoc.name}</p>
                   <p>2. Badilisha Eneo</p>
-                  <p>3. Msaada / Contact</p>
+                  <p>3. Msaada / Extension Desk</p>
                 </>
               )}
               {ussdStep === 2 && (
